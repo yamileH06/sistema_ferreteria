@@ -1,0 +1,161 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Categoria;
+use App\Models\DetalleVenta;
+use App\Models\Producto;
+use App\Models\User;
+use App\Models\Venta;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class ProductoCategoriaControllerTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_product_is_created_under_the_category_in_the_url(): void
+    {
+        $user = User::factory()->create(['rol' => 'bodeguero']);
+        $category = Categoria::query()->create(['nombre' => 'Herramientas']);
+        $otherCategory = Categoria::query()->create(['nombre' => 'Electricidad']);
+
+        $this->actingAs($user)->from('/categorias')
+            ->post("/categorias/{$category->id}/productos", [
+                'nombre' => 'Martillo',
+                'codigo_sku' => 'MAR-001',
+                'categoria_id' => $otherCategory->id,
+                'stock' => 8,
+                'precio_compra' => 12000,
+                'precio_venta' => 18000,
+            ])
+            ->assertRedirect('/categorias');
+
+        $this->assertDatabaseHas('productos', [
+            'nombre' => 'Martillo',
+            'codigo_sku' => 'MAR-001',
+            'categoria_id' => $category->id,
+            'stock' => 8,
+            'precio_compra' => 12000,
+            'precio_venta' => 18000,
+        ]);
+    }
+
+    public function test_product_creation_rejects_a_duplicate_sku(): void
+    {
+        $user = User::factory()->create(['rol' => 'bodeguero']);
+        $category = Categoria::query()->create(['nombre' => 'Pinturas']);
+        Producto::query()->create([
+            'nombre' => 'Pintura blanca',
+            'codigo_sku' => 'PIN-001',
+            'categoria_id' => $category->id,
+            'stock' => 5,
+            'precio_compra' => 20000,
+            'precio_venta' => 30000,
+        ]);
+
+        $this->actingAs($user)->from('/categorias')
+            ->post("/categorias/{$category->id}/productos", [
+                'nombre' => 'Pintura azul',
+                'codigo_sku' => 'PIN-001',
+                'stock' => 5,
+                'precio_compra' => 20000,
+                'precio_venta' => 30000,
+            ])
+            ->assertRedirect('/categorias')
+            ->assertSessionHasErrors('codigo_sku');
+
+        $this->assertDatabaseCount('productos', 1);
+    }
+
+    public function test_product_can_be_updated_without_changing_its_category(): void
+    {
+        $user = User::factory()->create(['rol' => 'bodeguero']);
+        $category = Categoria::query()->create(['nombre' => 'Plomería']);
+        $otherCategory = Categoria::query()->create(['nombre' => 'Electricidad']);
+        $product = Producto::query()->create([
+            'nombre' => 'Codo PVC',
+            'codigo_sku' => 'PVC-001',
+            'categoria_id' => $category->id,
+            'stock' => 10,
+            'precio_compra' => 1000,
+            'precio_venta' => 1500,
+        ]);
+
+        $this->actingAs($user)->from('/categorias')
+            ->put("/productos/{$product->id}", [
+                'nombre' => 'Codo PVC 90 grados',
+                'codigo_sku' => 'PVC-001',
+                'categoria_id' => $otherCategory->id,
+                'stock' => 12,
+                'precio_compra' => 1100,
+                'precio_venta' => 1700,
+            ])
+            ->assertRedirect('/categorias');
+
+        $this->assertDatabaseHas('productos', [
+            'id' => $product->id,
+            'nombre' => 'Codo PVC 90 grados',
+            'categoria_id' => $category->id,
+            'stock' => 12,
+            'precio_compra' => 1100,
+            'precio_venta' => 1700,
+        ]);
+    }
+
+    public function test_product_without_sales_can_be_deleted(): void
+    {
+        $user = User::factory()->create(['rol' => 'bodeguero']);
+        $category = Categoria::query()->create(['nombre' => 'Seguridad']);
+        $product = Producto::query()->create([
+            'nombre' => 'Candado',
+            'codigo_sku' => 'CAN-001',
+            'categoria_id' => $category->id,
+            'stock' => 4,
+            'precio_compra' => 5000,
+            'precio_venta' => 8000,
+        ]);
+
+        $this->actingAs($user)->from('/categorias')
+            ->delete("/productos/{$product->id}")
+            ->assertRedirect('/categorias');
+
+        $this->assertModelMissing($product);
+    }
+
+    public function test_product_with_sales_cannot_be_deleted(): void
+    {
+        $user = User::factory()->create(['rol' => 'bodeguero']);
+        $category = Categoria::query()->create(['nombre' => 'Construcción']);
+        $product = Producto::query()->create([
+            'nombre' => 'Cemento',
+            'codigo_sku' => 'CEM-001',
+            'categoria_id' => $category->id,
+            'stock' => 4,
+            'precio_compra' => 25000,
+            'precio_venta' => 32000,
+        ]);
+        $sale = Venta::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'total' => 32000,
+            'metodo_pago' => 'Efectivo',
+        ]);
+        DetalleVenta::query()->create([
+            'venta_id' => $sale->id,
+            'producto_id' => $product->id,
+            'cantidad' => 1,
+            'precio_unitario' => 32000,
+            'subtotal' => 32000,
+        ]);
+
+        $this->actingAs($user)->from('/categorias')
+            ->delete("/productos/{$product->id}")
+            ->assertRedirect('/categorias')
+            ->assertSessionHasErrors([
+                'producto' => 'No se puede eliminar este producto porque está asociado a ventas registradas.',
+            ]);
+
+        $this->assertModelExists($product);
+        $this->assertDatabaseCount('detalle_ventas', 1);
+    }
+}

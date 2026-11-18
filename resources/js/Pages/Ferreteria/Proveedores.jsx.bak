@@ -1,0 +1,348 @@
+import React, { useMemo, useState } from 'react';
+import { Head, router, useForm } from '@inertiajs/react';
+import { Building2, Mail, MapPin, Pencil, Phone, Plus, Search, Trash2, Truck, X } from 'lucide-react';
+import Sidebar from '../../Components/Sidebar';
+
+const emptySupplier = {
+    nombre: '',
+    nit: '',
+    telefono: '',
+    correo: '',
+    direccion: '',
+};
+
+export default function Proveedores({ proveedores }) {
+    const [search, setSearch] = useState('');
+    const [modalOpen, setModalOpen] = useState(false);
+    const [editingSupplier, setEditingSupplier] = useState(null);
+    const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm(emptySupplier);
+
+    const filteredSuppliers = useMemo(() => {
+        const query = search.trim().toLocaleLowerCase();
+
+        if (!query) {
+            return proveedores;
+        }
+
+        return proveedores.filter((supplier) =>
+            [supplier.nombre, supplier.nit]
+                .filter(Boolean)
+                .some((value) => String(value).toLocaleLowerCase().includes(query)),
+        );
+    }, [proveedores, search]);
+
+    const closeModal = () => {
+        setModalOpen(false);
+        setEditingSupplier(null);
+        reset();
+        clearErrors();
+    };
+
+    const openCreateModal = () => {
+        reset();
+        clearErrors();
+        setEditingSupplier(null);
+        setModalOpen(true);
+    };
+
+    const openEditModal = (supplier) => {
+        clearErrors();
+        setEditingSupplier(supplier);
+        setData({
+            nombre: supplier.nombre ?? '',
+            nit: supplier.nit ?? '',
+            telefono: supplier.telefono ?? '',
+            correo: supplier.correo ?? '',
+            direccion: supplier.direccion ?? '',
+        });
+        setModalOpen(true);
+    };
+
+    const submit = (event) => {
+        event.preventDefault();
+
+        const options = {
+            preserveScroll: true,
+            onSuccess: closeModal,
+        };
+
+        if (editingSupplier) {
+            put(`/proveedores/${editingSupplier.id}`, options);
+            return;
+        }
+
+        post('/proveedores', options);
+    };
+
+    const deleteSupplier = (supplier) => {
+        if (!window.confirm(`¿Eliminar el proveedor "${supplier.nombre}"?`)) {
+            return;
+        }
+
+        router.delete(`/proveedores/${supplier.id}`, {
+            preserveScroll: true,
+        });
+    };
+
+    return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 lg:flex">
+            <Head title="Proveedores - Ferretería" />
+            <Sidebar />
+
+            <main className="min-w-0 flex-1 p-4 lg:ml-64 lg:p-8">
+                <div className="mx-auto max-w-7xl">
+                    <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <p className="text-sm font-medium text-amber-400">FERRETERÍA</p>
+                            <h1 className="mt-1 text-2xl font-bold text-white">Proveedores</h1>
+                            <p className="mt-1 text-sm text-slate-400">
+                                Consulta y administra los proveedores del negocio.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={openCreateModal}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
+                        >
+                            <Plus size={17} aria-hidden="true" />
+                            Nuevo Proveedor
+                        </button>
+                    </header>
+
+                    <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl backdrop-blur-md">
+                        <div className="flex flex-col gap-3 border-b border-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h2 className="font-semibold text-white">Directorio de proveedores</h2>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    {filteredSuppliers.length} de {proveedores.length} proveedores
+                                </p>
+                            </div>
+                            <label className="relative block w-full sm:max-w-sm">
+                                <span className="sr-only">Buscar proveedor por nombre o NIT</span>
+                                <Search
+                                    className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-500"
+                                    size={17}
+                                    aria-hidden="true"
+                                />
+                                <input
+                                    type="search"
+                                    value={search}
+                                    onChange={(event) => setSearch(event.target.value)}
+                                    placeholder="Buscar por nombre o NIT..."
+                                    className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pr-3 pl-10 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                                />
+                            </label>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[900px] text-left text-sm">
+                                <thead className="bg-slate-950/60 text-xs uppercase tracking-wide text-slate-400">
+                                    <tr>
+                                        <th scope="col" className="px-5 py-4">Proveedor</th>
+                                        <th scope="col" className="px-5 py-4">NIT</th>
+                                        <th scope="col" className="px-5 py-4">Teléfono</th>
+                                        <th scope="col" className="px-5 py-4">Correo</th>
+                                        <th scope="col" className="px-5 py-4">Dirección</th>
+                                        <th scope="col" className="px-5 py-4 text-right">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800">
+                                    {filteredSuppliers.map((supplier) => (
+                                        <tr key={supplier.id} className="text-slate-200 transition hover:bg-slate-800/40">
+                                            <td className="px-5 py-4">
+                                                <span className="flex items-center gap-2.5 font-medium text-white">
+                                                    <Building2 size={17} className="shrink-0 text-amber-400" aria-hidden="true" />
+                                                    {supplier.nombre}
+                                                </span>
+                                            </td>
+                                            <td className="px-5 py-4 text-slate-300">{supplier.nit || '—'}</td>
+                                            <td className="px-5 py-4 text-slate-300">{supplier.telefono || '—'}</td>
+                                            <td className="px-5 py-4 text-slate-300">{supplier.correo || '—'}</td>
+                                            <td className="max-w-xs truncate px-5 py-4 text-slate-400" title={supplier.direccion || ''}>
+                                                {supplier.direccion || '—'}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <div className="flex justify-end gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openEditModal(supplier)}
+                                                        aria-label={`Editar ${supplier.nombre}`}
+                                                        className="rounded-lg border border-slate-700 p-2 text-slate-300 transition hover:border-amber-500 hover:text-amber-300"
+                                                    >
+                                                        <Pencil size={15} aria-hidden="true" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => deleteSupplier(supplier)}
+                                                        aria-label={`Eliminar ${supplier.nombre}`}
+                                                        className="rounded-lg border border-slate-700 p-2 text-slate-300 transition hover:border-rose-500 hover:text-rose-300"
+                                                    >
+                                                        <Trash2 size={15} aria-hidden="true" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {filteredSuppliers.length === 0 && (
+                                        <tr>
+                                            <td colSpan="6" className="px-5 py-14 text-center">
+                                                <Truck size={26} className="mx-auto mb-2 text-slate-600" aria-hidden="true" />
+                                                <p className="font-medium text-slate-300">
+                                                    {proveedores.length === 0
+                                                        ? 'Todavía no hay proveedores registrados.'
+                                                        : 'No hay proveedores que coincidan con la búsqueda.'}
+                                                </p>
+                                                {proveedores.length === 0 && (
+                                                    <p className="mt-1 text-sm text-slate-500">
+                                                        Usa “Nuevo Proveedor” para agregar el primero.
+                                                    </p>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </main>
+
+            {modalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+                    role="presentation"
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget && !processing) {
+                            closeModal();
+                        }
+                    }}
+                >
+                    <section
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="provider-modal-title"
+                        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
+                    >
+                        <header className="mb-5 flex items-start justify-between gap-4">
+                            <div>
+                                <span className="mb-3 flex size-10 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                                    {editingSupplier ? <Pencil size={18} aria-hidden="true" /> : <Truck size={19} aria-hidden="true" />}
+                                </span>
+                                <h2 id="provider-modal-title" className="text-lg font-semibold text-white">
+                                    {editingSupplier ? 'Editar proveedor' : 'Nuevo proveedor'}
+                                </h2>
+                                <p className="mt-1 text-sm text-slate-400">
+                                    Completa los datos de contacto del proveedor.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeModal}
+                                disabled={processing}
+                                aria-label="Cerrar formulario de proveedor"
+                                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
+                            >
+                                <X size={19} aria-hidden="true" />
+                            </button>
+                        </header>
+
+                        <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+                            <FormField
+                                label="Nombre"
+                                name="nombre"
+                                value={data.nombre}
+                                onChange={(value) => setData('nombre', value)}
+                                error={errors.nombre}
+                                required
+                            />
+                            <FormField
+                                label="NIT (opcional)"
+                                name="nit"
+                                value={data.nit}
+                                onChange={(value) => setData('nit', value)}
+                                error={errors.nit}
+                            />
+                            <FormField
+                                label="Teléfono"
+                                name="telefono"
+                                icon={Phone}
+                                value={data.telefono}
+                                onChange={(value) => setData('telefono', value)}
+                                error={errors.telefono}
+                            />
+                            <FormField
+                                label="Correo electrónico"
+                                name="correo"
+                                type="email"
+                                icon={Mail}
+                                value={data.correo}
+                                onChange={(value) => setData('correo', value)}
+                                error={errors.correo}
+                            />
+                            <div className="sm:col-span-2">
+                                <FormField
+                                    label="Dirección"
+                                    name="direccion"
+                                    icon={MapPin}
+                                    value={data.direccion}
+                                    onChange={(value) => setData('direccion', value)}
+                                    error={errors.direccion}
+                                />
+                            </div>
+
+                            <footer className="flex justify-end gap-2 pt-2 sm:col-span-2">
+                                <button
+                                    type="button"
+                                    onClick={closeModal}
+                                    disabled={processing}
+                                    className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={processing}
+                                    className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-60"
+                                >
+                                    {processing
+                                        ? 'Guardando...'
+                                        : editingSupplier
+                                            ? 'Guardar cambios'
+                                            : 'Guardar proveedor'}
+                                </button>
+                            </footer>
+                        </form>
+                    </section>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function FormField({ label, name, type = 'text', icon: Icon, value, onChange, error, required = false }) {
+    return (
+        <label className="block text-sm font-medium text-slate-200">
+            {label}
+            <span className="relative mt-1.5 block">
+                {Icon && (
+                    <Icon
+                        size={16}
+                        className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-500"
+                        aria-hidden="true"
+                    />
+                )}
+                <input
+                    type={type}
+                    name={name}
+                    value={value}
+                    onChange={(event) => onChange(event.target.value)}
+                    maxLength={name === 'direccion' ? 2000 : 255}
+                    required={required}
+                    autoFocus={name === 'nombre'}
+                    className={`w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pr-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 ${Icon ? 'pl-9' : 'pl-3'}`}
+                />
+            </span>
+            {error && <span className="mt-1 block text-xs text-rose-300">{error}</span>}
+        </label>
+    );
+}

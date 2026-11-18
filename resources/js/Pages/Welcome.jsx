@@ -1,0 +1,538 @@
+import React from 'react';
+import { Head, Link } from '@inertiajs/react';
+import {
+    AlertTriangle,
+    ArrowRight,
+    ArrowUpRight,
+    Boxes,
+    CheckCircle2,
+    ClipboardList,
+    DollarSign,
+    FileDown,
+    HardHat,
+    Package,
+    Receipt,
+    ShoppingCart,
+    Truck,
+    Users,
+    Wrench,
+} from 'lucide-react';
+import { getProductImage } from '../Utils/productImage';
+import ProductImage from '../Components/ProductImage';
+
+const currency = new Intl.NumberFormat('es-CO', {
+    maximumFractionDigits: 0,
+});
+
+function formatPrice(value) {
+    return `$ ${currency.format(Number(value || 0))} COP`;
+}
+
+function formatUnits(value) {
+    const num = Number(value || 0);
+    return Number.isInteger(num)
+        ? num.toLocaleString('es-CO')
+        : num.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 3 });
+}
+
+export default function Welcome({
+    stats = {},
+    ultimasVentas = [],
+    productosCriticos = [],
+    laravelVersion,
+    phpVersion,
+}) {
+    const {
+        ventas_hoy = 0,
+        ventas_hoy_count = 0,
+        total_productos = 0,
+        total_stock = 0,
+        alertas_stock_bajo = 0,
+        total_clientes = 0,
+        total_proveedores = 0,
+    } = stats || {};
+
+    return (
+        <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
+            <Head title="Inicio - Ferretería El Constructor" />
+
+            <div className="mx-auto max-w-7xl space-y-8">
+                {/* 1. Encabezado e Identidad de Marca */}
+                <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-amber-400">
+                            <HardHat size={14} className="text-amber-400" />
+                            <span>Panel de Control Integral</span>
+                        </div>
+                        <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+                            Ferretería El Constructor
+                        </h1>
+                        <p className="mt-1 text-sm text-slate-400 sm:text-base">
+                            Panel de Control Integral • Materiales, Herramientas y Construcción
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 self-start sm:self-auto">
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-2.5 text-right text-xs shadow-lg backdrop-blur-md">
+                            <p className="text-slate-400">Estado del Sistema</p>
+                            <p className="mt-0.5 flex items-center justify-end gap-1.5 font-semibold text-emerald-400">
+                                <span className="size-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                Operativo en línea
+                            </p>
+                        </div>
+                    </div>
+                </header>
+
+                {/* 2. Tarjetas de Indicadores Clave (KPIs en tiempo real) */}
+                <section aria-label="Indicadores Clave" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {/* KPI 1: Ventas de Hoy */}
+                    <article className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl backdrop-blur-md transition hover:border-amber-500/50">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                                    Ventas de Hoy (COP)
+                                </p>
+                                <p className="mt-2 text-2xl font-black text-amber-300">
+                                    {formatPrice(ventas_hoy)}
+                                </p>
+                            </div>
+                            <div className="flex size-11 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 shadow-inner transition group-hover:scale-105">
+                                <DollarSign size={22} aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
+                            <span className="font-semibold text-white">{ventas_hoy_count}</span>
+                            <span>{ventas_hoy_count === 1 ? 'venta registrada hoy' : 'ventas registradas hoy'}</span>
+                        </div>
+                    </article>
+
+                    {/* KPI 2: Total Productos */}
+                    <article className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl backdrop-blur-md transition hover:border-amber-500/50">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                                    Total Productos
+                                </p>
+                                <p className="mt-2 text-2xl font-black text-white">
+                                    {total_productos}{' '}
+                                    <span className="text-sm font-normal text-slate-400">registrados</span>
+                                </p>
+                            </div>
+                            <div className="flex size-11 items-center justify-center rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-400 shadow-inner transition group-hover:scale-105">
+                                <Package size={22} aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
+                            <span className="font-semibold text-amber-300">{formatUnits(total_stock)}</span>
+                            <span>unidades en existencias</span>
+                        </div>
+                    </article>
+
+                    {/* KPI 3: Alertas de Stock Bajo */}
+                    <article className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl backdrop-blur-md transition hover:border-amber-500/50">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                                    Alertas de Stock Bajo
+                                </p>
+                                <p className={`mt-2 text-2xl font-black ${alertas_stock_bajo > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                    {alertas_stock_bajo}{' '}
+                                    <span className="text-sm font-normal text-slate-400">productos</span>
+                                </p>
+                            </div>
+                            <div
+                                className={`flex size-11 items-center justify-center rounded-xl border shadow-inner transition group-hover:scale-105 ${
+                                    alertas_stock_bajo > 0
+                                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                                }`}
+                            >
+                                <AlertTriangle size={22} aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            {alertas_stock_bajo > 0 ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-xs font-medium text-rose-300">
+                                    <span className="size-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                                    Requieren reposición (≤ 10 uds)
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                                    Stock en niveles óptimos
+                                </span>
+                            )}
+                        </div>
+                    </article>
+
+                    {/* KPI 4: Clientes y Proveedores */}
+                    <article className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl backdrop-blur-md transition hover:border-amber-500/50">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                                    Clientes y Proveedores
+                                </p>
+                                <div className="mt-2 flex items-baseline gap-2">
+                                    <span className="text-2xl font-black text-white">{total_clientes}</span>
+                                    <span className="text-xs text-slate-400">clientes</span>
+                                    <span className="text-slate-600">•</span>
+                                    <span className="text-2xl font-black text-white">{total_proveedores}</span>
+                                    <span className="text-xs text-slate-400">prov.</span>
+                                </div>
+                            </div>
+                            <div className="flex size-11 items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-400 shadow-inner transition group-hover:scale-105">
+                                <Users size={22} aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+                            <span>Directorio comercial</span>
+                            <span className="font-medium text-amber-300">Activo</span>
+                        </div>
+                    </article>
+                </section>
+
+                {/* 3. Accesos Rápidos Mejorados */}
+                <section aria-label="Accesos Rápidos" className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Wrench size={18} className="text-amber-400" />
+                            Accesos Rápidos del Sistema
+                        </h2>
+                        <span className="text-xs text-slate-400">Módulos principales</span>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {/* Acceso 1: Punto de Venta (POS) */}
+                        <Link
+                            href="/pos"
+                            className="group flex flex-col justify-between rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/15 via-slate-900/90 to-slate-900 p-5 shadow-xl transition hover:border-amber-400/80 hover:shadow-amber-500/10"
+                        >
+                            <div>
+                                <div className="flex size-12 items-center justify-center rounded-xl bg-amber-500 text-slate-950 shadow-md">
+                                    <ShoppingCart size={22} aria-hidden="true" />
+                                </div>
+                                <h3 className="mt-4 text-lg font-bold text-white group-hover:text-amber-300 transition-colors">
+                                    Punto de Venta (POS)
+                                </h3>
+                                <p className="mt-1 text-xs text-slate-400">
+                                    Crea órdenes, selecciona clientes y genera cobros en caja.
+                                </p>
+                            </div>
+                            <span className="mt-5 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                                Abrir POS
+                                <ArrowRight size={15} className="transition group-hover:translate-x-1" />
+                            </span>
+                        </Link>
+
+                        {/* Acceso 2: Inventario */}
+                        <Link
+                            href="/inventario"
+                            className="group flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl transition hover:border-amber-500/50 hover:shadow-lg"
+                        >
+                            <div>
+                                <div className="flex size-12 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-amber-400">
+                                    <Package size={22} aria-hidden="true" />
+                                </div>
+                                <h3 className="mt-4 text-lg font-bold text-white group-hover:text-amber-300 transition-colors">
+                                    Inventario
+                                </h3>
+                                <p className="mt-1 text-xs text-slate-400">
+                                    Consulta existencias, precios de compra/venta y códigos SKU.
+                                </p>
+                            </div>
+                            <span className="mt-5 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                                Ir al Inventario
+                                <ArrowRight size={15} className="transition group-hover:translate-x-1" />
+                            </span>
+                        </Link>
+
+                        {/* Acceso 3: Historial de Ventas */}
+                        <Link
+                            href="/ventas"
+                            className="group flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl transition hover:border-amber-500/50 hover:shadow-lg"
+                        >
+                            <div>
+                                <div className="flex size-12 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-amber-400">
+                                    <ClipboardList size={22} aria-hidden="true" />
+                                </div>
+                                <h3 className="mt-4 text-lg font-bold text-white group-hover:text-amber-300 transition-colors">
+                                    Historial de Ventas
+                                </h3>
+                                <p className="mt-1 text-xs text-slate-400">
+                                    Consulta órdenes registradas, métodos de pago y facturas PDF.
+                                </p>
+                            </div>
+                            <span className="mt-5 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                                Ver Historial
+                                <ArrowRight size={15} className="transition group-hover:translate-x-1" />
+                            </span>
+                        </Link>
+
+                        {/* Acceso 4: Proveedores & Clientes */}
+                        <div className="flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl transition hover:border-amber-500/50">
+                            <div>
+                                <div className="flex size-12 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-amber-400">
+                                    <Truck size={22} aria-hidden="true" />
+                                </div>
+                                <h3 className="mt-4 text-lg font-bold text-white">
+                                    Contactos & Socios
+                                </h3>
+                                <p className="mt-1 text-xs text-slate-400">
+                                    Administra tu red de proveedores y cartera de clientes.
+                                </p>
+                            </div>
+                            <div className="mt-5 flex items-center gap-3 border-t border-slate-800 pt-3">
+                                <Link
+                                    href="/proveedores"
+                                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
+                                >
+                                    Proveedores
+                                    <ArrowUpRight size={14} />
+                                </Link>
+                                <span className="text-slate-700">•</span>
+                                <Link
+                                    href="/clientes"
+                                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
+                                >
+                                    Clientes
+                                    <ArrowUpRight size={14} />
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* 4. Sección Inferior Informativa (2 columnas) */}
+                <section aria-label="Tablas informativas" className="grid gap-6 lg:grid-cols-2">
+                    {/* Columna 1: Últimas 5 Ventas Realizadas */}
+                    <div className="flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl backdrop-blur-md">
+                        <div className="border-b border-slate-800 p-5">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="flex size-9 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                                        <Receipt size={18} aria-hidden="true" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-base font-bold text-white">
+                                            Últimas 5 Ventas Realizadas
+                                        </h2>
+                                        <p className="text-xs text-slate-400">
+                                            Registro reciente de transacciones en caja
+                                        </p>
+                                    </div>
+                                </div>
+                                <Link
+                                    href="/ventas"
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors"
+                                >
+                                    Ver todas
+                                    <ArrowRight size={14} />
+                                </Link>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-x-auto">
+                            {ultimasVentas && ultimasVentas.length > 0 ? (
+                                <table className="w-full text-left text-xs">
+                                    <thead className="border-b border-slate-800 bg-slate-950/40 uppercase tracking-wider text-slate-400">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-3">Código</th>
+                                            <th scope="col" className="px-4 py-3">Cliente</th>
+                                            <th scope="col" className="px-4 py-3">Método</th>
+                                            <th scope="col" className="px-4 py-3">Total</th>
+                                            <th scope="col" className="px-4 py-3 text-right">Factura</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/70 text-slate-300">
+                                        {ultimasVentas.map((venta) => (
+                                            <tr key={venta.id} className="transition hover:bg-slate-800/40">
+                                                <td className="px-4 py-3 font-semibold text-amber-300">
+                                                    {venta.codigo_venta}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium text-white max-w-[140px] truncate">
+                                                    {venta.cliente}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span
+                                                        className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-medium border ${
+                                                            venta.metodo_pago === 'Efectivo'
+                                                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                                                : venta.metodo_pago === 'Tarjeta'
+                                                                ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+                                                                : 'border-violet-500/30 bg-violet-500/10 text-violet-300'
+                                                        }`}
+                                                    >
+                                                        {venta.metodo_pago}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 font-bold text-white whitespace-nowrap">
+                                                    {formatPrice(venta.total)}
+                                                </td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <a
+                                                        href={venta.pdf_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        aria-label={`Descargar factura ${venta.codigo_venta}`}
+                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:border-amber-500 hover:text-amber-300"
+                                                    >
+                                                        <FileDown size={13} className="text-amber-400" aria-hidden="true" />
+                                                        <span>PDF</span>
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400">
+                                    <Receipt size={32} className="text-slate-600 mb-2" />
+                                    <p className="text-sm font-medium text-slate-300">No hay ventas registradas aún</p>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Las transacciones efectuadas desde el POS aparecerán aquí automáticamente.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="border-t border-slate-800/80 bg-slate-950/30 px-5 py-3 text-xs text-slate-500 flex items-center justify-between">
+                            <span>Comprobantes oficiales de Ferretería El Constructor</span>
+                            <Link href="/ventas" className="text-amber-400/80 hover:text-amber-300 transition-colors">
+                                Explorar historial →
+                            </Link>
+                        </div>
+                    </div>
+
+                    {/* Columna 2: Productos por Agotarse (Stock Crítico) */}
+                    <div className="flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl backdrop-blur-md">
+                        <div className="border-b border-slate-800 p-5">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="flex size-9 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-400">
+                                        <AlertTriangle size={18} aria-hidden="true" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-base font-bold text-white">
+                                            Productos por Agotarse (Stock Crítico)
+                                        </h2>
+                                        <p className="text-xs text-slate-400">
+                                            Artículos con menor stock en bodega para pedir a proveedores
+                                        </p>
+                                    </div>
+                                </div>
+                                <Link
+                                    href="/inventario"
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors"
+                                >
+                                    Ver inventario
+                                    <ArrowRight size={14} />
+                                </Link>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-x-auto">
+                            {productosCriticos && productosCriticos.length > 0 ? (
+                                <table className="w-full text-left text-xs">
+                                    <thead className="border-b border-slate-800 bg-slate-950/40 uppercase tracking-wider text-slate-400">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-3">Producto / SKU</th>
+                                            <th scope="col" className="px-4 py-3">Proveedor & Categoría</th>
+                                            <th scope="col" className="px-4 py-3 text-right">Existencias</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/70 text-slate-300">
+                                        {productosCriticos.map((producto) => {
+                                            const isAgotado = producto.stock <= 0;
+                                            const isCritico = producto.stock > 0 && producto.stock <= 5;
+                                            const isBajo = producto.stock > 5 && producto.stock <= 10;
+
+                                            return (
+                                                <tr key={producto.id} className="transition hover:bg-slate-800/40">
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <div className="size-9 shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-900">
+                                                                <ProductImage
+                                                                    product={producto}
+                                                                    className="size-full"
+                                                                    imgClassName="size-full object-cover"
+                                                                    compact
+                                                                />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="font-semibold text-white truncate max-w-[150px] sm:max-w-[200px]">
+                                                                    {producto.nombre}
+                                                                </p>
+                                                                <span className="font-mono text-[11px] text-amber-400/80">
+                                                                    {producto.codigo_sku}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-slate-400">
+                                                        <p className="font-medium text-slate-200">
+                                                            {producto.proveedor}
+                                                        </p>
+                                                        <span className="text-[11px] text-slate-400">
+                                                            {producto.categoria}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <span
+                                                            className={`inline-block rounded-lg px-2.5 py-1 text-xs font-bold border ${
+                                                                isAgotado
+                                                                    ? 'border-rose-500/40 bg-rose-500/20 text-rose-300'
+                                                                    : isCritico
+                                                                    ? 'border-rose-500/30 bg-rose-500/15 text-rose-300'
+                                                                    : isBajo
+                                                                    ? 'border-amber-500/30 bg-amber-500/15 text-amber-300'
+                                                                    : 'border-slate-700 bg-slate-800 text-slate-300'
+                                                            }`}
+                                                        >
+                                                            {isAgotado
+                                                                ? 'Agotado (0)'
+                                                                : `${formatUnits(producto.stock)} uds`}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400">
+                                    <CheckCircle2 size={32} className="text-emerald-500/60 mb-2" />
+                                    <p className="text-sm font-medium text-slate-300">
+                                        Inventario con existencias estables
+                                    </p>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        No hay productos en nivel crítico de reposición.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="border-t border-slate-800/80 bg-slate-950/30 px-5 py-3 text-xs text-slate-500 flex items-center justify-between">
+                            <span>Información para solicitud rápida de pedidos</span>
+                            <Link href="/inventario" className="text-amber-400/80 hover:text-amber-300 transition-colors">
+                                Reponer inventario →
+                            </Link>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Footer con información de versión */}
+                <footer className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-900/40 px-5 py-3.5 text-xs text-slate-500">
+                    <div className="flex items-center gap-2">
+                        <HardHat size={15} className="text-amber-400" />
+                        <span>Ferretería El Constructor • Sistema Integral de Administración y Ventas</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Boxes size={14} aria-hidden="true" />
+                        <span>Laravel {laravelVersion}</span>
+                        <span className="text-slate-700">•</span>
+                        <span>PHP {phpVersion}</span>
+                    </div>
+                </footer>
+            </div>
+        </div>
+    );
+}

@@ -1,0 +1,120 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Categoria;
+use App\Models\Producto;
+use App\Models\Proveedor;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ProductoController extends Controller
+{
+    public function index(): Response
+    {
+        $productos = Producto::with(['categoria', 'proveedor'])->get();
+        $categorias = Categoria::all();
+        $proveedores = Proveedor::all();
+
+        return Inertia::render('Ferreteria/Inventario', [
+            'productos' => $productos,
+            'categorias' => $categorias,
+            'proveedores' => $proveedores,
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'nombre' => ['required', 'string', 'max:255'],
+            'codigo_sku' => ['required', 'string', 'max:255', 'unique:productos,codigo_sku'],
+            'categoria_id' => ['required', 'exists:categorias,id'],
+            'proveedor_id' => ['nullable', 'exists:proveedors,id'],
+            'stock' => ['required', 'numeric', 'decimal:0,3', 'min:0', 'max:9999999.999'],
+            'precio_compra' => ['required', 'numeric', 'min:0'],
+            'precio_venta' => ['required', 'numeric', 'min:0'],
+            'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ]);
+
+        if ($request->hasFile('imagen')) {
+            $validated['imagen'] = $request->file('imagen')->store('productos', 'public');
+        }
+
+        Producto::create($validated);
+
+        return redirect()->back()->with('success', 'Producto registrado exitosamente en el inventario.');
+    }
+
+    public function storeInCategory(Request $request, Categoria $categoria): RedirectResponse
+    {
+        $validated = $request->validate([
+            'nombre' => ['required', 'string', 'max:255'],
+            'codigo_sku' => ['required', 'string', 'max:255', 'unique:productos,codigo_sku'],
+            'stock' => ['required', 'numeric', 'decimal:0,3', 'min:0', 'max:9999999.999'],
+            'precio_compra' => ['required', 'numeric', 'min:0'],
+            'precio_venta' => ['required', 'numeric', 'min:0'],
+            'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ]);
+
+        if ($request->hasFile('imagen')) {
+            $validated['imagen'] = $request->file('imagen')->store('productos', 'public');
+        }
+
+        $categoria->productos()->create($validated);
+
+        return back()->with('success', 'Producto agregado a la categoría correctamente.');
+    }
+
+    public function update(Request $request, Producto $producto): RedirectResponse
+    {
+        $validated = $request->validate([
+            'nombre' => ['required', 'string', 'max:255'],
+            'codigo_sku' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('productos', 'codigo_sku')->ignore($producto->id),
+            ],
+            'categoria_id' => ['nullable', 'exists:categorias,id'],
+            'proveedor_id' => ['nullable', 'exists:proveedors,id'],
+            'stock' => ['required', 'numeric', 'decimal:0,3', 'min:0', 'max:9999999.999'],
+            'precio_compra' => ['required', 'numeric', 'min:0'],
+            'precio_venta' => ['required', 'numeric', 'min:0'],
+            'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ]);
+
+        if ($request->hasFile('imagen')) {
+            if ($producto->imagen && Storage::disk('public')->exists($producto->imagen)) {
+                Storage::disk('public')->delete($producto->imagen);
+            }
+            $validated['imagen'] = $request->file('imagen')->store('productos', 'public');
+        } else {
+            unset($validated['imagen']);
+        }
+
+        $producto->update($validated);
+
+        return back()->with('success', 'Producto actualizado correctamente.');
+    }
+
+    public function destroy(Producto $producto): RedirectResponse
+    {
+        if ($producto->detallesVenta()->exists()) {
+            return back()->withErrors([
+                'producto' => 'No se puede eliminar este producto porque está asociado a ventas registradas.',
+            ]);
+        }
+
+        if ($producto->imagen && Storage::disk('public')->exists($producto->imagen)) {
+            Storage::disk('public')->delete($producto->imagen);
+        }
+
+        $producto->delete();
+
+        return back()->with('success', 'Producto eliminado correctamente.');
+    }
+}

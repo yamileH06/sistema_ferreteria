@@ -1,0 +1,241 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Venta;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ReporteController extends Controller
+{
+    /**
+     * Display sales reports, key metrics, and best/worst selling products.
+     */
+    public function index(Request $request): Response
+    {
+        $validated = $request->validate([
+            'desde' => ['nullable', 'date'],
+            'hasta' => ['nullable', 'date', 'after_or_equal:desde'],
+            'periodo' => [
+                'nullable',
+                'string',
+                Rule::in(['hoy', 'ayer', '7dias', 'este_mes', 'mes_anterior', 'todo', 'personalizado']),
+            ],
+        ]);
+
+        $periodo = $validated['periodo'] ?? null;
+        $desde = $validated['desde'] ?? null;
+        $hasta = $validated['hasta'] ?? null;
+
+        // If no explicit dates or periodo is provided, default to 'este_mes'
+        if ($periodo === null && $desde === null && $hasta === null) {
+            $periodo = 'este_mes';
+        }
+
+        // Resolve dates based on preset periodo if selected
+        if ($periodo !== null && $periodo !== 'personalizado') {
+            switch ($periodo) {
+                case 'hoy':
+                    $desde = Carbon::now()->toDateString();
+                    $hasta = Carbon::now()->toDateString();
+                    break;
+                case 'ayer':
+                    $desde = Carbon::now()->subDay()->toDateString();
+                    $hasta = Carbon::now()->subDay()->toDateString();
+                    break;
+                case '7dias':
+                    $desde = Carbon::now()->subDays(6)->toDateString();
+                    $hasta = Carbon::now()->toDateString();
+                    break;
+                case 'este_mes':
+                    $desde = Carbon::now()->startOfMonth()->toDateString();
+                    $hasta = Carbon::now()->toDateString();
+                    break;
+                case 'mes_anterior':
+                    $desde = Carbon::now()->subMonth()->startOfMonth()->toDateString();
+                    $hasta = Carbon::now()->subMonth()->endOfMonth()->toDateString();
+                    break;
+                case 'todo':
+                    $desde = null;
+                    $hasta = null;
+                    break;
+            }
+        } else {
+            $periodo = 'personalizado';
+        }
+
+        $ventasQuery = Venta::query();
+
+        if (! empty($desde)) {
+            $ventasQuery->whereDate('fecha_venta', '>=', $desde);
+        }
+
+        if (! empty($hasta)) {
+            $ventasQuery->whereDate('fecha_venta', '<=', $hasta);
+        }
+
+        $totalIngresos = (float) ((clone $ventasQuery)->sum('total') ?? 0);
+        $totalTransacciones = (int) (clone $ventasQuery)->count();
+        $totalDescuentos = (float) ((clone $ventasQuery)->sum('descuento') ?? 0);
+
+        $periodSaleIds = (clone $ventasQuery)->pluck('id');
+
+        $totalProductosVendidos = (float) (DB::table('detalle_ventas')
+            ->whereIn('venta_id', $periodSaleIds)
+            ->sum('cantidad') ?? 0);
+
+        $ticketPromedio = $totalTransacciones > 0
+            ? round($totalIngresos / $totalTransacciones, 2)
+            : 0;
+
+        // Breakdown by payment method
+        $metodosPago = (clone $ventasQuery)
+            ->select('metodo_pago', DB::raw('COUNT(*) as total_transacciones'), DB::raw('SUM(total) as total_monto'))
+            ->groupBy('metodo_pago')
+            ->get()
+            ->map(fn ($item): array => [
+                'metodo' => $item->metodo_pago,
+                'transacciones' => (int) $item->total_transacciones,
+                'monto' => (float) $item->total_monto,
+                'porcentaje' => $totalIngresos > 0
+                    ? round(((float) $item->total_monto / $totalIngresos) * 100, 1)
+                    : 0,
+            ])
+            ->values();
+
+        // Daily breakdown in the period
+        $ventasPorDia = (clone $ventasQuery)
+            ->select(
+                DB::raw('DATE(fecha_venta) as fecha'),
+                DB::raw('COUNT(*) as transacciones'),
+                DB::raw('SUM(total) as total_monto')
+            )
+            ->groupBy(DB::raw('DATE(fecha_venta)'))
+            ->orderBy(DB::raw('DATE(fecha_venta)'), 'asc')
+            ->get()
+            ->map(fn ($item): array => [
+                'fecha' => (string) $item->fecha,
+                'transacciones' => (int) $item->transacciones,
+                'total' => (float) $item->total_monto,
+            ])
+            ->values();
+
+        // Top best selling products
+        $masVendidos = DB::table('detalle_ventas')
+            ->join('productos', 'detalle_ventas.producto_id', '=', 'productos.id')
+            ->leftJoin('categorias', 'productos.categoria_id', '=', 'categorias.id')
+            ->whereIn('detalle_ventas.venta_id', $periodSaleIds)
+            ->select(
+                'productos.id',
+                'productos.nombre',
+                'productos.codigo_sku',
+                'productos.stock',
+                'productos.precio_venta',
+                'productos.imagen',
+                'categorias.nombre as categoria_nombre',
+                DB::raw('SUM(detalle_ventas.cantidad) as total_vendido'),
+                DB::raw('SUM(detalle_ventas.subtotal) as total_recaudado'),
+                DB::raw('COUNT(DISTINCT detalle_ventas.venta_id) as total_pedidos')
+            )
+            ->groupBy(
+                'productos.id',
+                'productos.nombre',
+                'productos.codigo_sku',
+                'productos.stock',
+                'productos.precio_venta',
+                'productos.imagen',
+                'categorias.nombre'
+            )
+            ->orderByDesc('total_vendido')
+            ->limit(10)
+            ->get()
+            ->map(fn ($p): array => [
+                'id' => $p->id,
+                'nombre' => $p->nombre,
+                'codigo_sku' => $p->codigo_sku,
+                'categoria' => $p->categoria_nombre ?? 'General',
+                'stock' => (float) $p->stock,
+                'precio_venta' => (float) $p->precio_venta,
+                'imagen' => $p->imagen,
+                'imagen_url' => $p->imagen
+                    ? (str_starts_with($p->imagen, 'http') ? $p->imagen : '/storage/'.ltrim($p->imagen, '/'))
+                    : null,
+                'total_vendido' => (float) $p->total_vendido,
+                'total_recaudado' => (float) $p->total_recaudado,
+                'total_pedidos' => (int) $p->total_pedidos,
+            ])
+            ->values();
+
+        // Least selling products (low rotation / stagnant inventory)
+        $salesAgg = DB::table('detalle_ventas')
+            ->whereIn('venta_id', $periodSaleIds)
+            ->select(
+                'producto_id',
+                DB::raw('SUM(cantidad) as total_vendido'),
+                DB::raw('SUM(subtotal) as total_recaudado'),
+                DB::raw('COUNT(DISTINCT venta_id) as total_pedidos')
+            )
+            ->groupBy('producto_id');
+
+        $menosVendidos = DB::table('productos')
+            ->leftJoinSub($salesAgg, 'resumen_ventas', function ($join): void {
+                $join->on('productos.id', '=', 'resumen_ventas.producto_id');
+            })
+            ->leftJoin('categorias', 'productos.categoria_id', '=', 'categorias.id')
+            ->select(
+                'productos.id',
+                'productos.nombre',
+                'productos.codigo_sku',
+                'productos.stock',
+                'productos.precio_venta',
+                'productos.imagen',
+                'categorias.nombre as categoria_nombre',
+                DB::raw('COALESCE(resumen_ventas.total_vendido, 0) as total_vendido'),
+                DB::raw('COALESCE(resumen_ventas.total_recaudado, 0) as total_recaudado'),
+                DB::raw('COALESCE(resumen_ventas.total_pedidos, 0) as total_pedidos')
+            )
+            ->orderBy('total_vendido', 'asc')
+            ->orderByDesc('productos.stock')
+            ->limit(10)
+            ->get()
+            ->map(fn ($p): array => [
+                'id' => $p->id,
+                'nombre' => $p->nombre,
+                'codigo_sku' => $p->codigo_sku,
+                'categoria' => $p->categoria_nombre ?? 'General',
+                'stock' => (float) $p->stock,
+                'precio_venta' => (float) $p->precio_venta,
+                'imagen' => $p->imagen,
+                'imagen_url' => $p->imagen
+                    ? (str_starts_with($p->imagen, 'http') ? $p->imagen : '/storage/'.ltrim($p->imagen, '/'))
+                    : null,
+                'total_vendido' => (float) $p->total_vendido,
+                'total_recaudado' => (float) $p->total_recaudado,
+                'total_pedidos' => (int) $p->total_pedidos,
+            ])
+            ->values();
+
+        return Inertia::render('Ferreteria/Reportes', [
+            'metricas' => [
+                'total_ingresos' => $totalIngresos,
+                'total_transacciones' => $totalTransacciones,
+                'total_productos_vendidos' => $totalProductosVendidos,
+                'ticket_promedio' => $ticketPromedio,
+                'total_descuentos' => $totalDescuentos,
+            ],
+            'metodos_pago' => $metodosPago,
+            'ventas_por_dia' => $ventasPorDia,
+            'mas_vendidos' => $masVendidos,
+            'menos_vendidos' => $menosVendidos,
+            'filtros' => [
+                'desde' => $desde ?? '',
+                'hasta' => $hasta ?? '',
+                'periodo' => $periodo,
+            ],
+        ]);
+    }
+}

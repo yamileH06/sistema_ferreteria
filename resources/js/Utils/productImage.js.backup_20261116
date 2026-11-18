@@ -1,0 +1,442 @@
+/**
+ * Utilidad de asignación inteligente y variada de imágenes para productos de ferretería.
+ * - Prioriza la imagen propia subida por el usuario.
+ * - Si no tiene foto propia, detecta la naturaleza específica del producto por palabras clave
+ *   y selecciona de un conjunto de fotos reales de stock (herramientas, cerraduras, materiales, etc.).
+ * - Usa un hash determinista por SKU/ID para asegurar que productos similares tengan fotos distintas
+ *   y no se repitan entre tarjetas adyacentes.
+ * - Estricta segregación: Cemento strictly sacos de cemento, Pintura strictly tarros/botes de pintura,
+ *   Cerrajería strictly candados/cerraduras metálicas sin personas ni celulares.
+ */
+
+// Colecciones de fotos reales de alta calidad estrictamente clasificadas por tipo de producto en ferretería
+const PRODUCT_IMAGE_COLLECTIONS = [
+    // -------------------------------------------------------------
+    // DISAMBIGUACIÓN DE CINTAS (Específicas antes de cualquier genérico)
+    // -------------------------------------------------------------
+    {
+        keywords: ['cinta aislante'],
+        images: [
+            'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=600&q=80', // Rollo de cinta aislante negra
+            'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80', // Cinta y conexiones eléctricas
+        ],
+    },
+    {
+        keywords: ['cinta teflon', 'teflon'],
+        images: [
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80', // Accesorios de fontanería y sellado
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80', // Conexiones de rosca
+        ],
+    },
+    {
+        keywords: ['cinta metrica', 'flexometro', 'metro de 5m', 'metro de 3m', 'metro'],
+        images: [
+            'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=600&q=80', // Cinta métrica flexómetro retráctil
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // DISAMBIGUACIÓN DE LLAVES (Llaves de fontanería vs Llaves manuales)
+    // -------------------------------------------------------------
+    {
+        keywords: ['llave de paso', 'llave de paso pvc', 'valvula de bola', 'valvula pvc', 'valvula'],
+        images: [
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80', // Válvula de paso para agua y tubería
+        ],
+    },
+    {
+        keywords: ['llave para tubo', 'llave tubo', 'stilson'],
+        images: [
+            'https://images.unsplash.com/photo-1580983559367-1724f331cb81?auto=format&fit=crop&w=600&q=80', // Llave para tubo Stilson de fontanero
+        ],
+    },
+    {
+        keywords: ['llave ajustable', 'llave inglesa', 'rachet', 'copas', 'llave fija'],
+        images: [
+            'https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=600&q=80', // Llave ajustable cromada
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // 1. CERRAJERÍA Y SEGURIDAD (Strict: Metal, llaves, cerraduras, sin personas ni celulares)
+    // -------------------------------------------------------------
+    {
+        keywords: ['candado', 'candado de bronce', 'candado laminado', 'candado de seguridad'],
+        images: [
+            'https://images.unsplash.com/photo-1582139329536-e7284fece509?auto=format&fit=crop&w=600&q=80', // Candado de bronce macizo con llaves
+            'https://images.unsplash.com/photo-1510519138161-58474dfab9c7?auto=format&fit=crop&w=600&q=80', // Candado blindado de acero en cadena
+            'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=600&q=80', // Candado laminado de alta resistencia
+        ],
+    },
+    {
+        keywords: ['cerradura', 'cerrojo', 'cilindro', 'chapa', 'pestillo', 'llavin'],
+        images: [
+            'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=600&q=80', // Cerradura y manija de acero inoxidable
+            'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80', // Cerrojo metálico de seguridad con llave insertada
+            'https://images.unsplash.com/photo-1517581177682-a085bb7ffb15?auto=format&fit=crop&w=600&q=80', // Cilindro de cerradura de latón con llaves
+            'https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?auto=format&fit=crop&w=600&q=80', // Cerradura cilíndrica para puerta
+        ],
+    },
+    {
+        keywords: ['bisagra', 'pasador', 'manija', 'manijon', 'tirador'],
+        images: [
+            'https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=600&q=80', // Bisagras y pasadores de acero
+            'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=600&q=80', // Manija metálica
+        ],
+    },
+    {
+        keywords: ['cadena', 'guaya', 'eslabon'],
+        images: [
+            'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=600&q=80', // Cadena de acero galvanizado
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // 2. CEMENTO Y MATERIALES DE CONSTRUCCIÓN (Strict: Sacos, varillas, áridos, mampostería)
+    // -------------------------------------------------------------
+    {
+        keywords: ['cemento', 'bulto de cemento', 'bolsa de cemento', 'mortero', 'pega', 'estuco'],
+        images: [
+            'https://images.unsplash.com/photo-1680357680725-f350480aee35?auto=format&fit=crop&w=600&q=80', // Sacos de cemento apilados en estiba
+            'https://images.unsplash.com/photo-1584463699042-4b2a3fafe4d8?auto=format&fit=crop&w=600&q=80', // Bultos de mortero y cemento para construcción
+            'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=600&q=80', // Materiales de construcción embolsados
+        ],
+    },
+    {
+        keywords: ['ladrillo', 'bloque', 'concreto'],
+        images: [
+            'https://images.unsplash.com/photo-1584622781564-1d987f7333c1?auto=format&fit=crop&w=600&q=80', // Ladrillos de arcilla y bloques de construcción
+            'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=600&q=80', // Bloques y mampostería
+        ],
+    },
+    {
+        keywords: ['varilla', 'acero', 'hierro', 'malla', 'corrugada', 'alambre negro', 'alambre recocido'],
+        images: [
+            'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=600&q=80', // Varillas corrugadas de acero para construcción
+            'https://images.unsplash.com/photo-1535813547-99c456a41d4a?auto=format&fit=crop&w=600&q=80', // Malla electrosoldada y armadura de acero
+        ],
+    },
+    {
+        keywords: ['arena', 'grava', 'gravilla', 'arido', 'triturado'],
+        images: [
+            'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80', // Montículo de arena limpia para obra
+            'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80', // Gravilla y triturado para mezcla
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // 3. PINTURAS E IMPERMEABILIZANTES (Strict: Botes de pintura, paletas, brochas, rodillos)
+    // -------------------------------------------------------------
+    {
+        keywords: ['brocha', 'rodillo', 'espatula', 'llana'],
+        images: [
+            'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80', // Rodillo para pintar paredes
+            'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=600&q=80', // Brochas profesionales de pintor
+            'https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=600&q=80', // Brochas con botes de pintura
+        ],
+    },
+    {
+        keywords: ['pintura', 'vinilo', 'esmalte', 'impermeabilizante', 'anticorrosiva', 'sellador', 'masilla', 'thinner', 'laca', 'barniz', 'lija'],
+        images: [
+            'https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=600&q=80', // Botes de pintura abiertos con colores vivos
+            'https://images.unsplash.com/photo-1542238060-646c7ed65622?auto=format&fit=crop&w=600&q=80', // Estantería de botes y galones de pintura
+            'https://images.unsplash.com/photo-1642035283657-1da7a2523713?auto=format&fit=crop&w=600&q=80', // Cubos de pintura profesional para construcción
+            'https://images.unsplash.com/photo-1507126862589-0639b0024e37?auto=format&fit=crop&w=600&q=80', // Balde de pintura industrial con asa
+            'https://images.unsplash.com/photo-1595814433015-e58ceb6d0a0f?auto=format&fit=crop&w=600&q=80', // Muestrario y paleta de colores de pintura
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // 4. PLOMERÍA Y TUBERÍA (Strict: Tubos PVC, accesorios, grifería, pegante PVC)
+    // -------------------------------------------------------------
+    {
+        keywords: ['pegante para pvc', 'pegante pvc', 'limpiador pvc', 'soldadura pvc'],
+        images: [
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80', // Accesorios y pegantes para fontanería
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80', // Adhesivos y tubos PVC
+        ],
+    },
+    {
+        keywords: ['griferia', 'grifo', 'lavamanos', 'lavaplatos', 'sifon'],
+        images: [
+            'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80', // Grifería cromada para lavamanos
+        ],
+    },
+    {
+        keywords: ['tubo', 'tubo pvc', 'tuberia', 'codo', 'tee', 'adaptador', 'drenaje', 'manguera'],
+        images: [
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80', // Tuberías de PVC apiladas
+            'https://images.unsplash.com/photo-1542013936693-884638332954?auto=format&fit=crop&w=600&q=80', // Tubos sanitarios y de presión
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // 5. HERRAMIENTAS ELÉCTRICAS (Strict: Taladro, pulidora, sierra, lijadora)
+    // -------------------------------------------------------------
+    {
+        keywords: ['taladro', 'rotomartillo', 'percutor', 'atornillador', 'sds'],
+        images: [
+            'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=600&q=80', // Taladro percutor profesional amarillo y negro
+            'https://images.unsplash.com/photo-1622295023576-e4fb6e9e8ca2?auto=format&fit=crop&w=600&q=80', // Taladro atornillador inalámbrico
+            'https://images.unsplash.com/photo-1572981779307-38b8cabb2407?auto=format&fit=crop&w=600&q=80', // Rotomartillo industrial
+        ],
+    },
+    {
+        keywords: ['pulidora', 'amoladora', 'esmeril'],
+        images: [
+            'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=600&q=80', // Pulidora angular con chispas de corte
+            'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80', // Amoladora angular de mano
+        ],
+    },
+    {
+        keywords: ['sierra', 'caladora', 'circular', 'tronzadora', 'disco de corte', 'disco'],
+        images: [
+            'https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=600&q=80', // Sierra circular eléctrica de mano
+            'https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=600&q=80', // Discos de corte para sierra
+        ],
+    },
+    {
+        keywords: ['lijadora', 'pistola de calor', 'compresor', 'orbital'],
+        images: [
+            'https://images.unsplash.com/photo-1513467535987-fd81bc7d62f8?auto=format&fit=crop&w=600&q=80', // Lijadora orbital para madera y metal
+            'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80', // Maquinaria de taller y compresores
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // 6. HERRAMIENTAS MANUALES (Strict: Martillos, alicates, destornilladores, niveles)
+    // -------------------------------------------------------------
+    {
+        keywords: ['martillo', 'mazo', 'maceta', 'combo'],
+        images: [
+            'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=600&q=80', // Martillo de uña de acero forjado
+            'https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=600&q=80', // Martillo con mango de madera
+        ],
+    },
+    {
+        keywords: ['alicate', 'pinza', 'tenaza', 'hombre solo', 'cortafrio'],
+        images: [
+            'https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80', // Alicate universal aislado
+            'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?auto=format&fit=crop&w=600&q=80', // Pinzas de presión y corte
+        ],
+    },
+    {
+        keywords: ['destornillador', 'desarmador', 'punta', 'torx'],
+        images: [
+            'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80', // Juego de destornilladores profesionales
+            'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=600&q=80', // Destornillador apretando tornillo
+        ],
+    },
+    {
+        keywords: ['nivel', 'nivel de aluminio'],
+        images: [
+            'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=600&q=80', // Nivel de aluminio de precisión
+        ],
+    },
+    {
+        keywords: ['serrucho', 'segueta', 'formon', 'prensa'],
+        images: [
+            'https://images.unsplash.com/photo-1546484396-fb3fc6f95f98?auto=format&fit=crop&w=600&q=80', // Serrucho manual de carpintero
+            'https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=600&q=80', // Prensa tipo C y herramientas de banco
+        ],
+    },
+    {
+        keywords: ['tornillo', 'clavo', 'chazo', 'perno', 'tuerca', 'fijacion', 'anclaje'],
+        images: [
+            'https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=600&q=80', // Tornillos metálicos y fijaciones
+            'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=600&q=80', // Pernos y tuercas
+        ],
+    },
+
+    // -------------------------------------------------------------
+    // 7. ELECTRICIDAD Y CABLEADO (Strict: Cables, tomas, interruptores, bombillos LED)
+    // -------------------------------------------------------------
+    {
+        keywords: ['cable', 'alambre de cobre', 'conductor', 'rollo de cable', 'thhn'],
+        images: [
+            'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80', // Bobinas de cable de cobre eléctrico
+            'https://images.unsplash.com/photo-1563770660941-20978e870e26?auto=format&fit=crop&w=600&q=80', // Rollos de cableado de colores
+        ],
+    },
+    {
+        keywords: ['interruptor', 'tomacorriente', 'toma', 'enchufe', 'clavija', 'pulsador', 'placa'],
+        images: [
+            'https://images.unsplash.com/photo-1557438159-51eec7a6c9e8?auto=format&fit=crop&w=600&q=80', // Interruptor y tomacorriente doble con placa blanca
+        ],
+    },
+    {
+        keywords: ['breaker', 'tacos', 'fusible', 'tablero electrico', 'caja automatica'],
+        images: [
+            'https://images.unsplash.com/photo-1581092162384-8987c1d64718?auto=format&fit=crop&w=600&q=80', // Tablero con breakers e interruptores termomagnéticos
+        ],
+    },
+    {
+        keywords: ['bombillo', 'foco', 'led', 'reflector', 'lampara', 'panel led', 'iluminacion'],
+        images: [
+            'https://images.unsplash.com/photo-1550524514-9b50e335fb66?auto=format&fit=crop&w=600&q=80', // Bombillo LED de filamento encendido
+            'https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?auto=format&fit=crop&w=600&q=80', // Reflector LED de alta potencia para exterior
+        ],
+    },
+    {
+        keywords: ['extension', 'extension electrica'],
+        images: [
+            'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80', // Extensión eléctrica industrial
+        ],
+    },
+];
+
+// Fallbacks organizados por categoría general de la ferretería (Garantizando estricta coherencia)
+const CATEGORY_FALLBACK_COLLECTIONS = [
+    {
+        keywords: ['cerrajeria', 'seguridad'],
+        images: [
+            'https://images.unsplash.com/photo-1582139329536-e7284fece509?auto=format&fit=crop&w=600&q=80', // Candado de bronce con llave
+            'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=600&q=80', // Cerradura y manija metálica
+            'https://images.unsplash.com/photo-1510519138161-58474dfab9c7?auto=format&fit=crop&w=600&q=80', // Candado de alta resistencia
+            'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80', // Cerrojo metálico
+        ],
+    },
+    {
+        keywords: ['pintura', 'pinturas', 'impermeabilizante', 'impermeabilizantes'],
+        images: [
+            'https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=600&q=80', // Botes de pintura y brochas
+            'https://images.unsplash.com/photo-1542238060-646c7ed65622?auto=format&fit=crop&w=600&q=80', // Estante de pintura
+            'https://images.unsplash.com/photo-1642035283657-1da7a2523713?auto=format&fit=crop&w=600&q=80', // Cubos de pintura
+            'https://images.unsplash.com/photo-1507126862589-0639b0024e37?auto=format&fit=crop&w=600&q=80', // Balde de pintura
+        ],
+    },
+    {
+        keywords: ['construccion', 'materiales'],
+        images: [
+            'https://images.unsplash.com/photo-1680357680725-f350480aee35?auto=format&fit=crop&w=600&q=80', // Sacos de cemento
+            'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=600&q=80', // Varillas corrugadas de acero
+            'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80', // Arena de construcción
+            'https://images.unsplash.com/photo-1584463699042-4b2a3fafe4d8?auto=format&fit=crop&w=600&q=80', // Bultos de mortero
+        ],
+    },
+    {
+        keywords: ['electricidad', 'cableado'],
+        images: [
+            'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80', // Bobinas de cable
+            'https://images.unsplash.com/photo-1557438159-51eec7a6c9e8?auto=format&fit=crop&w=600&q=80', // Tomacorriente e interruptor
+            'https://images.unsplash.com/photo-1550524514-9b50e335fb66?auto=format&fit=crop&w=600&q=80', // Bombillo LED
+        ],
+    },
+    {
+        keywords: ['herramientas electricas', 'electrica'],
+        images: [
+            'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=600&q=80', // Taladro percutor
+            'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=600&q=80', // Pulidora angular
+            'https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=600&q=80', // Sierra circular
+        ],
+    },
+    {
+        keywords: ['herramientas manuales', 'manual'],
+        images: [
+            'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=600&q=80', // Martillo
+            'https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80', // Alicate
+            'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80', // Destornilladores
+        ],
+    },
+    {
+        keywords: ['plomeria', 'tuberia'],
+        images: [
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80', // Tubos de PVC
+            'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80', // Grifería
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80', // Válvulas
+        ],
+    },
+];
+
+const DEFAULT_IMAGES = [
+    'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=600&q=80', // Martillo de acero
+    'https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80', // Alicate universal
+    'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80', // Juego de herramientas
+    'https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=600&q=80', // Llave ajustable
+];
+
+/**
+ * Normaliza una cadena removiendo acentos y caracteres diacríticos.
+ */
+function normalizeText(text) {
+    if (!text || typeof text !== 'string') return '';
+    return text
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+}
+
+/**
+ * Genera un número entero positivo determinista a partir de los atributos del producto.
+ */
+function getProductHash(product) {
+    const seed = `${product?.id ?? ''}-${product?.codigo_sku ?? ''}-${product?.nombre ?? ''}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+        hash = (hash << 5) - hash + seed.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash);
+}
+
+/**
+ * Obtiene la imagen adecuada para un producto:
+ * 1. Prioriza la imagen subida en BD (disco public) si existe y es válida.
+ * 2. Si no tiene foto propia, busca la colección por palabras clave en el nombre (estricta correspondencia).
+ * 3. Usa un hash para seleccionar una foto de la colección garantizando variedad entre productos similares.
+ * 4. Si no coincide el nombre, busca por categoría de ferretería.
+ * 5. Fallback a imagen de herramientas de ferretería garantizadas.
+ *
+ * @param {object} product - Objeto del producto
+ * @returns {string} URL de la imagen
+ */
+export function getProductImage(product) {
+    if (!product) return DEFAULT_IMAGES[0];
+
+    // 1. Imagen propia subida por el usuario
+    if (product.imagen_url && typeof product.imagen_url === 'string' && product.imagen_url.trim() !== '') {
+        return product.imagen_url;
+    }
+    if (product.imagen && typeof product.imagen === 'string' && product.imagen.trim() !== '') {
+        return product.imagen.startsWith('http')
+            ? product.imagen
+            : `/storage/${product.imagen.replace(/^\/+/, '')}`;
+    }
+
+    const hash = getProductHash(product);
+    const nombreNormalizado = normalizeText(product.nombre);
+
+    // 2. Coincidencia específica por palabras clave en el nombre
+    for (const entry of PRODUCT_IMAGE_COLLECTIONS) {
+        const matches = entry.keywords.some((kw) =>
+            nombreNormalizado.includes(normalizeText(kw)),
+        );
+        if (matches && entry.images.length > 0) {
+            const index = hash % entry.images.length;
+            return entry.images[index];
+        }
+    }
+
+    // 3. Coincidencia por categoría del producto
+    const categoriaNormalizada = normalizeText(
+        typeof product.categoria === 'string'
+            ? product.categoria
+            : product.categoria?.nombre || '',
+    );
+
+    if (categoriaNormalizada) {
+        for (const entry of CATEGORY_FALLBACK_COLLECTIONS) {
+            const matches = entry.keywords.some((kw) =>
+                categoriaNormalizada.includes(normalizeText(kw)),
+            );
+            if (matches && entry.images.length > 0) {
+                const index = hash % entry.images.length;
+                return entry.images[index];
+            }
+        }
+    }
+
+    // 4. Fallback determinista general de ferretería
+    return DEFAULT_IMAGES[hash % DEFAULT_IMAGES.length];
+}

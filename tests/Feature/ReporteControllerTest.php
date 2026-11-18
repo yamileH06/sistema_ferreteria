@@ -1,0 +1,242 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Categoria;
+use App\Models\DetalleVenta;
+use App\Models\Producto;
+use App\Models\User;
+use App\Models\Venta;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
+use Tests\TestCase;
+
+class ReporteControllerTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_guest_is_redirected_to_login(): void
+    {
+        $this->get('/reportes')
+            ->assertRedirect('/login');
+    }
+
+    public function test_bodeguero_cannot_access_reports(): void
+    {
+        $bodeguero = User::factory()->create(['rol' => 'bodeguero']);
+
+        $this->actingAs($bodeguero)
+            ->get('/reportes')
+            ->assertRedirect(route('inventario.index'))
+            ->assertSessionHas('error');
+    }
+
+    public function test_admin_and_cajero_can_access_reports(): void
+    {
+        $admin = User::factory()->create(['rol' => 'administrador']);
+        $cajero = User::factory()->create(['rol' => 'cajero']);
+
+        $this->actingAs($admin)
+            ->get('/reportes')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Ferreteria/Reportes')
+                ->has('metricas')
+                ->has('metodos_pago')
+                ->has('ventas_por_dia')
+                ->has('mas_vendidos')
+                ->has('menos_vendidos')
+                ->has('filtros'));
+
+        $this->actingAs($cajero)
+            ->get('/reportes')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Ferreteria/Reportes'));
+    }
+
+    public function test_reports_calculates_metrics_and_product_rotation_correctly(): void
+    {
+        $admin = User::factory()->create(['rol' => 'administrador']);
+
+        $category = Categoria::query()->create(['nombre' => 'Fijaciones']);
+
+        // Product A: high seller (3 units sold)
+        $prodA = Producto::query()->create([
+            'nombre' => 'Tornillo Drywall 1 pulgada',
+            'codigo_sku' => 'TOR-001',
+            'categoria_id' => $category->id,
+            'stock' => 100,
+            'precio_compra' => 50,
+            'precio_venta' => 100,
+        ]);
+
+        // Product B: low seller (1 unit sold)
+        $prodB = Producto::query()->create([
+            'nombre' => 'Martillo de uña 16oz',
+            'codigo_sku' => 'MAR-001',
+            'categoria_id' => $category->id,
+            'stock' => 15,
+            'precio_compra' => 15000,
+            'precio_venta' => 25000,
+        ]);
+
+        // Product C: zero sales, high stock (stagnant inventory)
+        $prodC = Producto::query()->create([
+            'nombre' => 'Pala redonda cabo largo',
+            'codigo_sku' => 'PAL-001',
+            'categoria_id' => $category->id,
+            'stock' => 45,
+            'precio_compra' => 20000,
+            'precio_venta' => 35000,
+        ]);
+
+        // Create Sale 1
+        $sale1 = Venta::query()->create([
+            'user_id' => $admin->id,
+            'total' => 25300,
+            'metodo_pago' => 'Efectivo',
+            'estado' => 'completada',
+        ]);
+        $sale1->forceFill(['fecha_venta' => '2026-11-15 10:00:00'])->saveQuietly();
+
+        DetalleVenta::query()->create([
+            'venta_id' => $sale1->id,
+            'producto_id' => $prodA->id,
+            'cantidad' => 3,
+            'precio_unitario' => 100,
+            'subtotal' => 300,
+        ]);
+
+        DetalleVenta::query()->create([
+            'venta_id' => $sale1->id,
+            'producto_id' => $prodB->id,
+            'cantidad' => 1,
+            'precio_unitario' => 25000,
+            'subtotal' => 25000,
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/reportes?periodo=todo')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Ferreteria/Reportes')
+                ->where('metricas.total_ingresos', 25300)
+                ->where('metricas.total_transacciones', 1)
+                ->where('metricas.total_productos_vendidos', 4)
+                ->where('metricas.ticket_promedio', 25300)
+                // Check best seller is Product A (3 units)
+                ->where('mas_vendidos.0.id', $prodA->id)
+                ->where('mas_vendidos.0.total_vendido', 3)
+                // Check least seller includes Product C (0 units sold, 45 in stock)
+                ->where('menos_vendidos.0.id', $prodC->id)
+                ->where('menos_vendidos.0.total_vendido', 0)
+                ->where('menos_vendidos.0.stock', 45));
+    }
+
+    public function test_reports_filters_by_custom_date_range(): void
+    {
+        $admin = User::factory()->create(['rol' => 'administrador']);
+
+        // Sale in range (Nov 10)
+        $saleInRange = Venta::query()->create([
+            'user_id' => $admin->id,
+            'total' => 50000,
+            'metodo_pago' => 'Transferencia',
+            'estado' => 'completada',
+        ]);
+        $saleInRange->forceFill(['fecha_venta' => '2026-11-10 12:00:00'])->saveQuietly();
+
+        // Sale out of range (Nov 01)
+        $saleOutOfRange = Venta::query()->create([
+            'user_id' => $admin->id,
+            'total' => 30000,
+            'metodo_pago' => 'Efectivo',
+            'estado' => 'completada',
+        ]);
+        $saleOutOfRange->forceFill(['fecha_venta' => '2026-11-01 12:00:00'])->saveQuietly();
+
+        $this->actingAs($admin)
+            ->get('/reportes?desde=2026-11-08&hasta=2026-11-12')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Ferreteria/Reportes')
+                ->where('metricas.total_ingresos', 50000)
+                ->where('metricas.total_transacciones', 1)
+                ->where('filtros.desde', '2026-11-08')
+                ->where('filtros.hasta', '2026-11-12'));
+    }
+
+    public function test_reports_rejects_end_date_before_start_date(): void
+    {
+        $admin = User::factory()->create(['rol' => 'administrador']);
+
+        $this->actingAs($admin)
+            ->from('/reportes')
+            ->get('/reportes?desde=2026-11-15&hasta=2026-11-10')
+            ->assertRedirect('/reportes')
+            ->assertSessionHasErrors('hasta');
+    }
+
+    public function test_admin_and_cajero_can_export_sales_report_to_pdf(): void
+    {
+        $admin = User::factory()->create(['rol' => 'administrador']);
+        $cajero = User::factory()->create(['rol' => 'cajero']);
+
+        $category = Categoria::query()->create(['nombre' => 'Herramientas']);
+        $product = Producto::query()->create([
+            'nombre' => 'Taladro Percutor',
+            'codigo_sku' => 'TAL-500',
+            'categoria_id' => $category->id,
+            'stock' => 10,
+            'precio_compra' => 120000,
+            'precio_venta' => 180000,
+        ]);
+
+        $sale = Venta::query()->create([
+            'user_id' => $admin->id,
+            'total' => 180000,
+            'metodo_pago' => 'Tarjeta',
+            'estado' => 'completada',
+        ]);
+
+        DetalleVenta::query()->create([
+            'venta_id' => $sale->id,
+            'producto_id' => $product->id,
+            'cantidad' => 1,
+            'precio_unitario' => 180000,
+            'subtotal' => 180000,
+        ]);
+
+        // Admin export
+        $response = $this->actingAs($admin)
+            ->get('/reportes/pdf?periodo=todo');
+
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $response->headers->get('content-type'));
+        $this->assertStringContainsString('reporte-ventas-', (string) $response->headers->get('content-disposition'));
+
+        // Cajero export with date filters
+        $cajeroResponse = $this->actingAs($cajero)
+            ->get('/reportes/pdf?periodo=personalizado&desde=2026-01-01&hasta=2026-12-31');
+
+        $cajeroResponse->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $cajeroResponse->headers->get('content-type'));
+    }
+
+    public function test_bodeguero_cannot_export_sales_report_to_pdf(): void
+    {
+        $bodeguero = User::factory()->create(['rol' => 'bodeguero']);
+
+        $this->actingAs($bodeguero)
+            ->get('/reportes/pdf')
+            ->assertRedirect(route('inventario.index'))
+            ->assertSessionHas('error');
+    }
+
+    public function test_guest_cannot_export_sales_report_to_pdf(): void
+    {
+        $this->get('/reportes/pdf')
+            ->assertRedirect('/login');
+    }
+}

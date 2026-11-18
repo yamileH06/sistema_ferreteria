@@ -1,0 +1,640 @@
+/**
+ * Utilidad de asignación inteligente de imágenes para productos de ferretería.
+ *
+ * REGLAS ESTRICTAS:
+ * 1. Prioriza la imagen propia subida por el usuario (campo `imagen` en BD).
+ * 2. Si no tiene foto propia, busca coincidencia EXACTA por palabras clave específicas
+ *    del nombre del producto (más específicas primero, genéricas después).
+ * 3. Usa un hash determinista por ID+SKU+Nombre para garantizar variedad visual
+ *    entre productos del mismo tipo.
+ * 4. PROHIBIDO: Fotos de personas, castillos, celulares o imágenes genéricas.
+ *    Cada URL aquí fue verificada manualmente en Unsplash.
+ *
+ * IMPORTANTE: Las entradas están ordenadas de más específica a más genérica.
+ * El primer match gana, así que las keywords multi-palabra van primero.
+ */
+
+const PRODUCT_IMAGE_COLLECTIONS = [
+    // =====================================================================
+    // DESAMBIGUACIONES ESPECÍFICAS (Multi-keyword que debe matchear primero)
+    // =====================================================================
+
+    // --- Cintas específicas ---
+    {
+        keywords: ['cinta aislante'],
+        images: [
+            'https://images.unsplash.com/photo-1572981779307-38b8cabb2407?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['cinta de enmascarar', 'cinta enmascarar'],
+        images: [
+            'https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['cinta selladora', 'cinta teflon', 'teflon'],
+        images: [
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['cinta metrica', 'flexometro'],
+        images: [
+            'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // --- Llaves específicas (fontanería vs herramienta manual) ---
+    {
+        keywords: ['llave de paso', 'llave terminal'],
+        images: [
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['llave para tubo', 'llave tubo', 'stilson'],
+        images: [
+            'https://images.unsplash.com/photo-1580983559367-1724f331cb81?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['llave ajustable', 'llave inglesa', 'llave de expansion', 'llaves hexagonales'],
+        images: [
+            'https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // --- Pegantes específicos ---
+    {
+        keywords: ['pegante para pvc', 'pegante pvc', 'soldadura liquida pvc', 'limpiador pvc'],
+        images: [
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // --- Válvulas y Flotadores (antes que "tubo" genérico) ---
+    {
+        keywords: ['valvula de bola', 'valvula flotador', 'valvula'],
+        images: [
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // CERRAJERÍA Y SEGURIDAD
+    // =====================================================================
+    {
+        keywords: ['candado'],
+        images: [
+            'https://images.unsplash.com/photo-1582139329536-e7284fece509?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1510519138161-58474dfab9c7?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['cerradura', 'cerrojo', 'cilindro', 'chapa', 'pestillo', 'llavin', 'pomo', 'portacandado', 'ojo magico'],
+        images: [
+            'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1517581177682-a085bb7ffb15?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['caja fuerte'],
+        images: [
+            'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['bisagra'],
+        images: [
+            'https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['pasador', 'manija', 'manijon', 'tirador', 'colonial'],
+        images: [
+            'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['cadena', 'guaya', 'eslabon'],
+        images: [
+            'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // MATERIALES DE CONSTRUCCIÓN
+    // =====================================================================
+    {
+        keywords: ['cemento', 'bulto de cemento', 'bolsa de cemento'],
+        images: [
+            'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['mortero'],
+        images: [
+            'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['estuco'],
+        images: [
+            'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['cal hidratada', 'cal '],
+        images: [
+            'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['impermeabilizante integral', 'impermeabilizante mortero'],
+        images: [
+            'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['varilla', 'corrugada'],
+        images: [
+            'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['arena'],
+        images: [
+            'https://images.unsplash.com/photo-1573588028698-f4759befb09a?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['grava', 'gravilla', 'triturad'],
+        images: [
+            'https://images.unsplash.com/photo-1517089596392-fb9a9033e05b?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['ladrillo', 'tolete'],
+        images: [
+            'https://images.unsplash.com/photo-1584622781564-1d987f7333c1?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['bloque', 'concreto'],
+        images: [
+            'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['malla electrosoldada', 'malla'],
+        images: [
+            'https://images.unsplash.com/photo-1535813547-99c456a41d4a?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['alambre negro', 'alambre recocido'],
+        images: [
+            'https://images.unsplash.com/photo-1563770660941-20978e870e26?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // PINTURAS E IMPERMEABILIZANTES
+    // =====================================================================
+    {
+        keywords: ['brocha'],
+        images: [
+            'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['rodillo'],
+        images: [
+            'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['lija'],
+        images: [
+            'https://images.unsplash.com/photo-1513467535987-fd81bc7d62f8?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['thinner', 'disolvente'],
+        images: [
+            'https://images.unsplash.com/photo-1507126862589-0639b0024e37?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['resanador', 'masilla', 'sellador'],
+        images: [
+            'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['anticorrosiva'],
+        images: [
+            'https://images.unsplash.com/photo-1642035283657-1da7a2523713?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['pintura', 'vinilo', 'esmalte', 'impermeabilizante acrilico', 'laca', 'barniz'],
+        images: [
+            'https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1542238060-646c7ed65622?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1642035283657-1da7a2523713?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1507126862589-0639b0024e37?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1595814433015-e58ceb6d0a0f?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // PLOMERÍA Y TUBERÍA
+    // =====================================================================
+    {
+        keywords: ['griferia', 'grifo', 'lavamanos', 'lavaplatos'],
+        images: [
+            'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['sifon'],
+        images: [
+            'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['acople flexible', 'acople'],
+        images: [
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['tubo', 'tuberia', 'codo pvc', 'tee pvc', 'adaptador pvc', 'drenaje', 'manguera'],
+        images: [
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1542013936693-884638332954?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // HERRAMIENTAS ELÉCTRICAS
+    // =====================================================================
+    {
+        keywords: ['taladro', 'percutor'],
+        images: [
+            'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1622295023576-e4fb6e9e8ca2?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['rotomartillo', 'sds'],
+        images: [
+            'https://images.unsplash.com/photo-1572981779307-38b8cabb2407?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['pulidora', 'amoladora'],
+        images: [
+            'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['sierra', 'circular', 'caladora', 'tronzadora'],
+        images: [
+            'https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['lijadora', 'orbital'],
+        images: [
+            'https://images.unsplash.com/photo-1513467535987-fd81bc7d62f8?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['pistola de calor'],
+        images: [
+            'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['esmeril', 'banco'],
+        images: [
+            'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['atornillador'],
+        images: [
+            'https://images.unsplash.com/photo-1622295023576-e4fb6e9e8ca2?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['compresor'],
+        images: [
+            'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['soldador', 'inversor'],
+        images: [
+            'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // HERRAMIENTAS MANUALES
+    // =====================================================================
+    {
+        keywords: ['martillo', 'mazo', 'maceta', 'combo'],
+        images: [
+            'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['alicate', 'pinza', 'tenaza', 'cortafrio'],
+        images: [
+            'https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['hombre solo', 'mordaza'],
+        images: [
+            'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['destornillador', 'desarmador'],
+        images: [
+            'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['nivel', 'burbuja'],
+        images: [
+            'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['serrucho'],
+        images: [
+            'https://images.unsplash.com/photo-1546484396-fb3fc6f95f98?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['segueta', 'arco de segueta'],
+        images: [
+            'https://images.unsplash.com/photo-1546484396-fb3fc6f95f98?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['formon'],
+        images: [
+            'https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['prensa'],
+        images: [
+            'https://images.unsplash.com/photo-1580983559367-1724f331cb81?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['bisturi', 'retractil'],
+        images: [
+            'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // TORNILLERÍA Y FIJACIONES
+    // =====================================================================
+    {
+        keywords: ['tornillo', 'clavo', 'chazo', 'perno', 'tuerca', 'fijacion', 'anclaje'],
+        images: [
+            'https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // ELECTRICIDAD Y CABLEADO
+    // =====================================================================
+    {
+        keywords: ['cable', 'conductor', 'thhn', 'encauchetado'],
+        images: [
+            'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1563770660941-20978e870e26?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['interruptor', 'tomacorriente', 'toma', 'enchufe', 'pulsador', 'placa blanca'],
+        images: [
+            'https://images.unsplash.com/photo-1557438159-51eec7a6c9e8?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['breaker', 'termomagnetico', 'fusible', 'tablero'],
+        images: [
+            'https://images.unsplash.com/photo-1581092162384-8987c1d64718?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['bombillo', 'foco', 'led', 'reflector', 'lampara', 'iluminacion', 'plafon'],
+        images: [
+            'https://images.unsplash.com/photo-1550524514-9b50e335fb66?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['extension electrica', 'extension'],
+        images: [
+            'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['multitoma', 'supresor'],
+        images: [
+            'https://images.unsplash.com/photo-1557438159-51eec7a6c9e8?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['canaleta'],
+        images: [
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+
+    // =====================================================================
+    // RACHET / COPAS (si aparecen)
+    // =====================================================================
+    {
+        keywords: ['rachet', 'copas'],
+        images: [
+            'https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+];
+
+// Fallbacks por categoría general del producto
+const CATEGORY_FALLBACK_COLLECTIONS = [
+    {
+        keywords: ['cerrajeria', 'seguridad'],
+        images: [
+            'https://images.unsplash.com/photo-1582139329536-e7284fece509?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1510519138161-58474dfab9c7?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['pintura', 'pinturas', 'impermeabilizante', 'impermeabilizantes'],
+        images: [
+            'https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1542238060-646c7ed65622?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1642035283657-1da7a2523713?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1507126862589-0639b0024e37?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['construccion', 'materiales'],
+        images: [
+            'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['electricidad', 'cableado'],
+        images: [
+            'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1557438159-51eec7a6c9e8?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1550524514-9b50e335fb66?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['herramientas electricas', 'electrica'],
+        images: [
+            'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['herramientas manuales', 'manual'],
+        images: [
+            'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+    {
+        keywords: ['plomeria', 'tuberia'],
+        images: [
+            'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
+            'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=600&q=80',
+        ],
+    },
+];
+
+const DEFAULT_IMAGES = [
+    'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=600&q=80',
+    'https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80',
+    'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+    'https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=600&q=80',
+];
+
+/**
+ * Normaliza una cadena removiendo acentos y caracteres diacríticos.
+ */
+function normalizeText(text) {
+    if (!text || typeof text !== 'string') return '';
+    return text
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+}
+
+/**
+ * Genera un número entero positivo determinista a partir de los atributos del producto.
+ */
+function getProductHash(product) {
+    const seed = `${product?.id ?? ''}-${product?.codigo_sku ?? ''}-${product?.nombre ?? ''}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+        hash = (hash << 5) - hash + seed.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash);
+}
+
+/**
+ * Obtiene la imagen adecuada para un producto:
+ * 1. Prioriza la imagen subida en BD (disco public).
+ * 2. Si no tiene foto propia, busca la colección por palabras clave en el nombre.
+ * 3. Usa un hash para seleccionar una foto de la colección garantizando variedad entre productos similares.
+ * 4. Si no coincide el nombre, busca por categoría.
+ * 5. Fallback a imagen de herramientas de ferretería.
+ *
+ * @param {object} product - Objeto del producto
+ * @returns {string} URL de la imagen
+ */
+export function getProductImage(product) {
+    if (!product) return DEFAULT_IMAGES[0];
+
+    // 1. Imagen propia subida por el usuario
+    if (product.imagen_url && typeof product.imagen_url === 'string' && product.imagen_url.trim() !== '') {
+        return product.imagen_url;
+    }
+    if (product.imagen && typeof product.imagen === 'string' && product.imagen.trim() !== '') {
+        return product.imagen.startsWith('http')
+            ? product.imagen
+            : `/storage/${product.imagen.replace(/^\/+/, '')}`;
+    }
+
+    const hash = getProductHash(product);
+    const nombreNormalizado = normalizeText(product.nombre);
+
+    // 2. Coincidencia específica por palabras clave en el nombre
+    for (const entry of PRODUCT_IMAGE_COLLECTIONS) {
+        const matches = entry.keywords.some((kw) =>
+            nombreNormalizado.includes(normalizeText(kw)),
+        );
+        if (matches && entry.images.length > 0) {
+            const index = hash % entry.images.length;
+            return entry.images[index];
+        }
+    }
+
+    // 3. Coincidencia por categoría del producto
+    const categoriaNormalizada = normalizeText(
+        typeof product.categoria === 'string'
+            ? product.categoria
+            : product.categoria?.nombre || '',
+    );
+
+    if (categoriaNormalizada) {
+        for (const entry of CATEGORY_FALLBACK_COLLECTIONS) {
+            const matches = entry.keywords.some((kw) =>
+                categoriaNormalizada.includes(normalizeText(kw)),
+            );
+            if (matches && entry.images.length > 0) {
+                const index = hash % entry.images.length;
+                return entry.images[index];
+            }
+        }
+    }
+
+    // 4. Fallback determinista general de ferretería
+    return DEFAULT_IMAGES[hash % DEFAULT_IMAGES.length];
+}

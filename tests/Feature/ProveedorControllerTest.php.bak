@@ -1,0 +1,101 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Categoria;
+use App\Models\Producto;
+use App\Models\Proveedor;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
+use Tests\TestCase;
+
+class ProveedorControllerTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_bodeguero_can_view_providers_and_filter_fields_are_available(): void
+    {
+        $provider = Proveedor::query()->create([
+            'nombre' => 'Ferretería Andina',
+            'nit' => '900123456-1',
+            'telefono' => '3123456789',
+            'correo' => 'ventas@example.com',
+            'direccion' => 'Ipiales, Nariño',
+        ]);
+
+        $this->actingAs(User::factory()->create(['rol' => 'bodeguero']))
+            ->get('/proveedores')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Ferreteria/Proveedores')
+                ->where('proveedores.0.id', $provider->id)
+                ->where('proveedores.0.correo', 'ventas@example.com'));
+    }
+
+    public function test_bodeguero_can_create_and_update_provider_details(): void
+    {
+        $user = User::factory()->create(['rol' => 'bodeguero']);
+
+        $this->actingAs($user)
+            ->post('/proveedores', [
+                'nombre' => 'Suministros del Sur',
+                'nit' => '901234567-8',
+                'telefono' => '3101234567',
+                'correo' => 'contacto@example.com',
+                'direccion' => 'Carrera 5, Ipiales',
+            ])
+            ->assertRedirect('/proveedores')
+            ->assertSessionHasNoErrors();
+
+        $provider = Proveedor::query()->sole();
+
+        $this->assertSame('contacto@example.com', $provider->correo);
+        $this->assertSame('Carrera 5, Ipiales', $provider->direccion);
+
+        $this->put("/proveedores/{$provider->id}", [
+            'nombre' => 'Suministros del Sur SAS',
+            'nit' => '901234567-8',
+            'telefono' => '3101234567',
+            'correo' => 'actualizado@example.com',
+            'direccion' => 'Calle 10, Ipiales',
+        ])
+            ->assertRedirect('/proveedores')
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('Suministros del Sur SAS', $provider->fresh()->nombre);
+        $this->assertSame('actualizado@example.com', $provider->fresh()->correo);
+    }
+
+    public function test_provider_cannot_be_deleted_while_products_reference_it(): void
+    {
+        $user = User::factory()->create(['rol' => 'bodeguero']);
+        $provider = Proveedor::query()->create(['nombre' => 'Proveedor asociado']);
+        $category = Categoria::query()->create(['nombre' => 'Herramientas']);
+        $product = Producto::query()->create([
+            'nombre' => 'Taladro',
+            'codigo_sku' => 'TAL-100',
+            'categoria_id' => $category->id,
+            'proveedor_id' => $provider->id,
+            'stock' => 5,
+            'precio_compra' => 10000,
+            'precio_venta' => 15000,
+        ]);
+
+        $this->actingAs($user)
+            ->from('/proveedores')
+            ->delete("/proveedores/{$provider->id}")
+            ->assertRedirect('/proveedores')
+            ->assertSessionHasErrors('proveedor');
+
+        $this->assertModelExists($provider);
+        $this->assertModelExists($product);
+    }
+
+    public function test_cajero_cannot_access_provider_management(): void
+    {
+        $this->actingAs(User::factory()->create(['rol' => 'cajero']))
+            ->get('/proveedores')
+            ->assertRedirect(route('pos.index'));
+    }
+}

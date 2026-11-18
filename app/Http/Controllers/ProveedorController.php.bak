@@ -1,0 +1,78 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Proveedor;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ProveedorController extends Controller
+{
+    public function index(): Response
+    {
+        return Inertia::render('Ferreteria/Proveedores', [
+            'proveedores' => Proveedor::query()
+                ->orderBy('nombre')
+                ->get(['id', 'nombre', 'nit', 'telefono', 'correo', 'direccion']),
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'nombre' => ['required', 'string', 'max:255'],
+            'nit' => ['nullable', 'string', 'max:255'],
+            'telefono' => ['nullable', 'string', 'max:255'],
+            'correo' => ['nullable', 'email', 'max:255'],
+            'direccion' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        Proveedor::query()->create($validated);
+
+        return back()->with('success', 'Proveedor registrado correctamente.');
+    }
+
+    public function update(Request $request, Proveedor $proveedor): RedirectResponse
+    {
+        $validated = $request->validate([
+            'nombre' => ['required', 'string', 'max:255'],
+            'nit' => ['nullable', 'string', 'max:255'],
+            'telefono' => ['nullable', 'string', 'max:255'],
+            'correo' => ['nullable', 'email', 'max:255'],
+            'direccion' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $proveedor->update($validated);
+
+        return back()->with('success', 'Proveedor actualizado correctamente.');
+    }
+
+    public function destroy(Proveedor $proveedor): RedirectResponse
+    {
+        $deleted = DB::transaction(function () use ($proveedor): bool {
+            $lockedProveedor = Proveedor::query()
+                ->whereKey($proveedor->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedProveedor->productos()->exists()) {
+                return false;
+            }
+
+            $lockedProveedor->delete();
+
+            return true;
+        });
+
+        if (! $deleted) {
+            return back()->withErrors([
+                'proveedor' => 'No se puede eliminar este proveedor porque tiene productos asociados.',
+            ]);
+        }
+
+        return back()->with('success', 'Proveedor eliminado correctamente.');
+    }
+}

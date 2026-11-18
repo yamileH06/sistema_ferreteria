@@ -1,0 +1,79 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
+
+class Producto extends Model
+{
+    /**
+     * The accessors to append to the model's array form.
+     *
+     * @var array<int, string>
+     */
+    protected $appends = [
+        'imagen_url',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'stock' => 'decimal:3',
+            'precio_compra' => 'decimal:2',
+            'precio_venta' => 'decimal:2',
+        ];
+    }
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = [
+        'nombre',
+        'codigo_sku',
+        'categoria_id',
+        'proveedor_id',
+        'stock',
+        'precio_compra',
+        'precio_venta',
+        'imagen',
+    ];
+
+    /**
+     * Get the resolved public URL for the product image.
+     */
+    public function getImagenUrlAttribute(): ?string
+    {
+        if (! $this->imagen) {
+            return null;
+        }
+
+        if (str_starts_with($this->imagen, 'http://') || str_starts_with($this->imagen, 'https://')) {
+            return $this->imagen;
+        }
+
+        return '/storage/'.ltrim($this->imagen, '/');
+    }
+
+    public function categoria()
+    {
+        return $this->belongsTo(Categoria::class);
+    }
+
+    public function proveedor()
+    {
+        return $this->belongsTo(Proveedor::class);
+    }
+
+    public function detallesVenta()
+    {
+        return $this->hasMany(DetalleVenta::class);
+    }
+}
