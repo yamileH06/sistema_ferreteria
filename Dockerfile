@@ -1,15 +1,30 @@
+# Etapa 1: Compilar los archivos de diseño
+FROM node:22 AS frontend
+
+WORKDIR /app
+
+COPY . .
+
+RUN npm install
+RUN npm run build
+
+# Etapa 2: Preparar Laravel
 FROM php:8.3-apache
 
 RUN apt-get update && apt-get install -y \
     git unzip libzip-dev \
     && docker-php-ext-install pdo pdo_mysql zip \
-    && a2enmod rewrite
+    && a2enmod rewrite \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
 COPY . .
+
+# Copiar los archivos que Vite acaba de generar
+COPY --from=frontend /app/public/build ./public/build
 
 RUN composer install --no-dev --optimize-autoloader
 
