@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { getProductImage } from '../../Utils/productImage';
 import ProductImage from '../../Components/ProductImage';
+import Sidebar from '../../Components/Sidebar';
 
 export default function Inventario({ productos, categorias, proveedores }) {
     const [busqueda, setBusqueda] = useState('');
@@ -193,10 +194,12 @@ export default function Inventario({ productos, categorias, proveedores }) {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 p-6 text-slate-100">
+        <div className="min-h-screen bg-slate-950 text-slate-100 lg:flex">
             <Head title="Inventario - Ferretería El Constructor" />
+            <Sidebar />
 
-            <div className="mx-auto max-w-7xl">
+            <main className="min-w-0 flex-1 p-4 lg:ml-64 lg:p-8">
+                <div className="mx-auto max-w-7xl">
                 <header className="mb-8 flex flex-col gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h1 className="text-3xl font-bold tracking-wider text-amber-500">
@@ -760,6 +763,7 @@ export default function Inventario({ productos, categorias, proveedores }) {
                     </section>
                 </div>
             )}
+            </main>
         </div>
     );
 }

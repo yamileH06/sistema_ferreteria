@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { getProductImage } from '../Utils/productImage';
 import ProductImage from '../Components/ProductImage';
+import Sidebar from '../Components/Sidebar';
 
 const currency = new Intl.NumberFormat('es-CO', {
     maximumFractionDigits: 0,
@@ -53,10 +54,12 @@ export default function Welcome({
     } = stats || {};
 
     return (
-        <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
+        <div className="min-h-screen bg-slate-950 text-slate-100 lg:flex">
             <Head title="Inicio - Ferretería El Constructor" />
+            <Sidebar />
 
-            <div className="mx-auto max-w-7xl space-y-8">
+            <main className="min-w-0 flex-1 p-4 lg:ml-64 lg:p-8">
+                <div className="mx-auto max-w-7xl space-y-8">
                 {/* 1. Encabezado e Identidad de Marca */}
                 <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -533,6 +536,7 @@ export default function Welcome({
                     </div>
                 </footer>
             </div>
+            </main>
         </div>
     );
 }

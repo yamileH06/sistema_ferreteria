@@ -5,6 +5,7 @@ import {
     Boxes,
     ClipboardList,
     House,
+    LogIn,
     LogOut,
     Package,
     ShoppingCart,
@@ -17,7 +18,7 @@ import {
 const navigation = [
     { label: 'Inicio', href: '/', icon: House },
     { label: 'Inventario', href: '/inventario', icon: Package, roles: ['administrador', 'bodeguero'] },
-    { label: 'Punto de Venta (POS)', href: '/pos', icon: ShoppingCart, roles: ['administrador', 'cajero'] },
+    { label: 'Punto de Venta', href: '/pos', icon: ShoppingCart, roles: ['administrador', 'cajero'] },
     { label: 'Categorías', href: '/categorias', icon: Tags, roles: ['administrador', 'bodeguero'] },
     { label: 'Proveedores', href: '/proveedores', icon: Truck, roles: ['administrador', 'bodeguero'] },
     { label: 'Clientes', href: '/clientes', icon: Users, roles: ['administrador', 'cajero'] },
@@ -31,12 +32,22 @@ export default function Sidebar() {
     const user = props.auth?.user;
     const flash = props.flash ?? {};
     const currentPath = url.split('?')[0];
-    const visibleNavigation = navigation.filter(
-        ({ roles }) => !roles || roles.includes(user?.rol),
-    );
+
+    // Si no hay usuario logueado (p. ej. en la pantalla de inicio en Render),
+    // mostramos los menús principales para acceso y conocimiento del sistema.
+    // Si el usuario está autenticado, filtramos según su rol.
+    const visibleNavigation = navigation.filter(({ roles }) => {
+        if (!user) {
+            return true;
+        }
+        if (user.rol === 'administrador') {
+            return true;
+        }
+        return !roles || roles.includes(user.rol);
+    });
 
     return (
-        <aside className="z-30 w-full shrink-0 border-b border-slate-700/70 bg-slate-900/90 backdrop-blur-md lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-b-0">
+        <aside className="z-40 w-full shrink-0 border-b border-slate-700/70 bg-slate-900/95 backdrop-blur-md lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-b-0">
             <div className="flex items-center gap-3 px-5 py-5">
                 <div className="flex size-10 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-500/10 text-amber-400">
                     <Wrench size={20} aria-hidden="true" />
@@ -85,7 +96,7 @@ export default function Sidebar() {
                         {flash.success}
                     </p>
                 )}
-                {user && (
+                {user ? (
                     <>
                         <div className="mb-3 flex items-center gap-2 text-xs text-slate-400">
                             <Boxes size={15} aria-hidden="true" />
@@ -100,6 +111,14 @@ export default function Sidebar() {
                             Cerrar sesión
                         </button>
                     </>
+                ) : (
+                    <Link
+                        href="/login"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2.5 text-center text-sm font-semibold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-400"
+                    >
+                        <LogIn size={16} aria-hidden="true" />
+                        <span>Iniciar sesión</span>
+                    </Link>
                 )}
             </div>
         </aside>
